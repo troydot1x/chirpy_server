@@ -26,14 +26,6 @@ type apiConfig struct {
 }
 
 // Structures for JSON handling
-type ChirpRequest struct {
-	Body string `json:"body"`
-}
-
-type CleanedResponse struct {
-	CleanedBody string `json:"cleaned_body"`
-}
-
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
@@ -47,6 +39,19 @@ type User struct {
 
 type UserRequest struct {
 	Email string `json:"email"`
+}
+
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
+type CreateChirpRequest struct {
+	Body   string    `json:"body"`
+	UserID uuid.UUID `json:"user_id"`
 }
 
 // Helper functions for HTTP responses
@@ -116,26 +121,6 @@ func (cfg *apiConfig) adminResetHandler(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusOK)
 }
 
-func validateChirpHandler(w http.ResponseWriter, r *http.Request) {
-	decoder := json.NewDecoder(r.Body)
-	var chirp ChirpRequest
-	err := decoder.Decode(&chirp)
-
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Something went wrong")
-		return
-	}
-
-	if len(chirp.Body) > 140 {
-		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
-		return
-	}
-
-	// Clean profanity and respond with cleaned text
-	cleanedBody := cleanProfanity(chirp.Body)
-	respondWithJSON(w, http.StatusOK, CleanedResponse{CleanedBody: cleanedBody})
-}
-
 func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	var userReq UserRequest
@@ -166,6 +151,49 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondWithJSON(w, http.StatusCreated, user)
+}
+
+func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+	var chirpReq CreateChirpRequest
+	err := decoder.Decode(&chirpReq)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	// Validate chirp length
+	if len(chirpReq.Body) > 140 {
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
+		return
+	}
+
+	// Clean profanity
+	cleanedBody := cleanProfanity(chirpReq.Body)
+
+	// Create chirp in database
+	dbChirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Body:      cleanedBody,
+		UserID:    chirpReq.UserID,
+	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error creating chirp")
+		return
+	}
+
+	// Map database chirp to response chirp
+	chirp := Chirp{
+		ID:        dbChirp.ID,
+		CreatedAt: dbChirp.CreatedAt,
+		UpdatedAt: dbChirp.UpdatedAt,
+		Body:      dbChirp.Body,
+		UserID:    dbChirp.UserID,
+	}
+
+	respondWithJSON(w, http.StatusCreated, chirp)
 }
 
 func main() {
@@ -204,8 +232,8 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	// Validate chirp endpoint - POST only
-	mux.HandleFunc("POST /api/validate_chirp", validateChirpHandler)
+	// Chirps endpoint - POST only
+	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpHandler)
 
 	// Admin metrics endpoint - GET only, returns HTML
 	mux.HandleFunc("GET /admin/metrics", apiCfg.adminMetricsHandler)
