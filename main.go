@@ -154,46 +154,46 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
-	decoder := json.NewDecoder(r.Body)
-	var chirpReq CreateChirpRequest
-	err := decoder.Decode(&chirpReq)
+	var req CreateChirpRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
 
 	// Validate chirp length
-	if len(chirpReq.Body) > 140 {
+	if len(req.Body) > 140 {
 		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
 
 	// Clean profanity
-	cleanedBody := cleanProfanity(chirpReq.Body)
+	cleanedBody := cleanProfanity(req.Body)
 
 	// Create chirp in database
-	dbChirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		ID:        uuid.New(),
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 		Body:      cleanedBody,
-		UserID:    chirpReq.UserID,
+		UserID:    req.UserID,
 	})
 	if err != nil {
+		log.Printf("Error creating chirp: %v", err) // Add logging
 		respondWithError(w, http.StatusInternalServerError, "Error creating chirp")
 		return
 	}
 
-	// Map database chirp to response chirp
-	chirp := Chirp{
-		ID:        dbChirp.ID,
-		CreatedAt: dbChirp.CreatedAt,
-		UpdatedAt: dbChirp.UpdatedAt,
-		Body:      dbChirp.Body,
-		UserID:    dbChirp.UserID,
+	// Convert database chirp to response type
+	response := Chirp{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
 	}
 
-	respondWithJSON(w, http.StatusCreated, chirp)
+	respondWithJSON(w, http.StatusCreated, response)
 }
 
 func main() {
