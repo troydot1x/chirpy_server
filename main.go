@@ -17,13 +17,18 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	})
 }
 
-func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+func (cfg *apiConfig) adminMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "Hits: %d", cfg.fileserverHits.Load())
+	fmt.Fprintf(w, `<html>
+  <body>
+    <h1>Welcome, Chirpy Admin</h1>
+    <p>Chirpy has been visited %d times!</p>
+  </body>
+</html>`, cfg.fileserverHits.Load())
 }
 
-func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) adminResetHandler(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
 	w.WriteHeader(http.StatusOK)
 }
@@ -35,18 +40,18 @@ func main() {
 	// Create a new ServeMux
 	mux := http.NewServeMux()
 
-	// Readiness endpoint at /healthz - GET only
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	// Readiness endpoint at /api/healthz - GET only
+	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
-	// Metrics endpoint - GET only
-	mux.HandleFunc("GET /metrics", apiCfg.metricsHandler)
+	// Admin metrics endpoint - GET only, returns HTML
+	mux.HandleFunc("GET /admin/metrics", apiCfg.adminMetricsHandler)
 
-	// Reset endpoint - POST only
-	mux.HandleFunc("POST /reset", apiCfg.resetHandler)
+	// Admin reset endpoint - POST only
+	mux.HandleFunc("POST /admin/reset", apiCfg.adminResetHandler)
 
 	// Serve static files from the "assets" directory at /assets/
 	assetsFS := http.FileServer(http.Dir("assets"))
