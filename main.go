@@ -179,7 +179,7 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 		UserID:    req.UserID,
 	})
 	if err != nil {
-		log.Printf("Error creating chirp: %v", err) // Add logging
+		log.Printf("Error creating chirp: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Error creating chirp")
 		return
 	}
@@ -194,6 +194,65 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondWithJSON(w, http.StatusCreated, response)
+}
+
+func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
+	// Get all chirps from database
+	chirps, err := cfg.db.GetChirps(r.Context())
+	if err != nil {
+		log.Printf("Error getting chirps: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Error getting chirps")
+		return
+	}
+
+	// Convert database chirps to response type
+	response := make([]Chirp, len(chirps))
+	for i, dbChirp := range chirps {
+		response[i] = Chirp{
+			ID:        dbChirp.ID,
+			CreatedAt: dbChirp.CreatedAt,
+			UpdatedAt: dbChirp.UpdatedAt,
+			Body:      dbChirp.Body,
+			UserID:    dbChirp.UserID,
+		}
+	}
+
+	respondWithJSON(w, http.StatusOK, response)
+}
+
+func (cfg *apiConfig) getChirpByIDHandler(w http.ResponseWriter, r *http.Request) {
+	// Get chirp ID from path parameter
+	chirpIDStr := r.PathValue("chirpID")
+
+	// Parse the UUID
+	chirpID, err := uuid.Parse(chirpIDStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid chirp ID format")
+		return
+	}
+
+	// Get chirp from database
+	chirp, err := cfg.db.GetChirpByID(r.Context(), chirpID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			respondWithError(w, http.StatusNotFound, "Chirp not found")
+			return
+		}
+		log.Printf("Error getting chirp: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Error getting chirp")
+		return
+	}
+
+	// Convert database chirp to response type
+	response := Chirp{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
+	}
+
+	respondWithJSON(w, http.StatusOK, response)
 }
 
 func main() {
@@ -232,8 +291,10 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	// Chirps endpoint - POST only
+	// Chirps endpoints
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpHandler)
+	mux.HandleFunc("GET /api/chirps", apiCfg.getChirpsHandler)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.getChirpByIDHandler)
 
 	// Admin metrics endpoint - GET only, returns HTML
 	mux.HandleFunc("GET /admin/metrics", apiCfg.adminMetricsHandler)
